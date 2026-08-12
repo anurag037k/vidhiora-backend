@@ -50,7 +50,7 @@ const userSchema = new mongoose.Schema({
     courseYear: { type: String, required: true },
     college: { type: String, required: true },
     accountType: { type: String, default: 'Student' },
-    referralId: { type: String, unique: true, sparse: true }, 
+    referralId: { type: String, default: null }, 
     referredBy: { type: String, default: null },
     walletBalance: { type: Number, default: 0 }, 
     amountPaid: { type: Number, default: 0 },
@@ -60,6 +60,8 @@ const userSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 const User = mongoose.model('User', userSchema);
+// Automatically drop the old strict referralId index on startup to fix duplicate null crashes
+User.collection.dropIndex("referralId_1").catch(() => {});
 
 // --- 5. API ROUTES ---
 app.post('/api/admin/login', (req, res) => {
@@ -149,11 +151,11 @@ app.delete('/api/admin/reject-payment/:userId', verifyAdmin, async (req, res) =>
         const user = await User.findById(req.params.userId);
         if (!user) return res.status(404).json({ error: "User not found." });
         
-        // Allows deleting if it's pending, OR if you need to wipe a wrong approval
         await User.findByIdAndDelete(req.params.userId);
         res.json({ message: "Registration deleted successfully." });
     } catch (error) { res.status(500).json({ error: "CRASH: " + error.message }); }
 });
+
 app.delete('/api/admin/remove-ambassador/:userId', verifyAdmin, async (req, res) => {
     try {
         const user = await User.findById(req.params.userId);
@@ -165,6 +167,7 @@ app.delete('/api/admin/remove-ambassador/:userId', verifyAdmin, async (req, res)
         res.status(500).json({ error: "CRASH: " + error.message }); 
     }
 });
+
 app.post('/api/admin/create-ambassador', verifyAdmin, async (req, res) => {
     try {
         const { fullName, email, phone, customCode } = req.body;
@@ -212,8 +215,6 @@ app.get('/api/admin/users', verifyAdmin, async (req, res) => {
             if (u.paymentStatus === 'Approved') rev += u.amountPaid;
             payouts += u.walletBalance;
             
-            // --- THE UPDATED SORTING LOGIC ---
-            // Only sorts into the Ambassador tab if they are strictly Approved
             if ((u.referralId || u.accountType === 'Ambassador') && u.paymentStatus === 'Approved') {
                 ambassadors.push({ 
                     _id: u._id, 
@@ -225,7 +226,6 @@ app.get('/api/admin/users', verifyAdmin, async (req, res) => {
                     totalReferred: referralCounts[u.referralId] || 0 
                 });
             } else { 
-                // Everyone else (including pending ambassadors) waits in the main inbox
                 students.push(u); 
             }
         });
