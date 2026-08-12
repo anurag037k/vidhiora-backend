@@ -154,7 +154,17 @@ app.delete('/api/admin/reject-payment/:userId', verifyAdmin, async (req, res) =>
         res.json({ message: "Registration deleted successfully." });
     } catch (error) { res.status(500).json({ error: "CRASH: " + error.message }); }
 });
-
+app.delete('/api/admin/remove-ambassador/:userId', verifyAdmin, async (req, res) => {
+    try {
+        const user = await User.findById(req.params.userId);
+        if (!user) return res.status(404).json({ error: "Ambassador not found." });
+        
+        await User.findByIdAndDelete(req.params.userId);
+        res.json({ message: "Ambassador removed successfully." });
+    } catch (error) { 
+        res.status(500).json({ error: "CRASH: " + error.message }); 
+    }
+});
 app.post('/api/admin/create-ambassador', verifyAdmin, async (req, res) => {
     try {
         const { fullName, email, phone, customCode } = req.body;
