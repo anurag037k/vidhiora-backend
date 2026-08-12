@@ -4,12 +4,12 @@ const cors = require('cors');
 const nodemailer = require('nodemailer');
 
 const app = express();
-// Increase JSON limit to handle Base64 image strings
+// Increased limit to 10mb to handle Base64 screenshot strings safely
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ limit: '10mb', extended: true }));
 app.use(cors());
 
-// --- 1. CONFIGURATION ---
+// --- 1. SECURE CONFIGURATION ---
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin@vidhiora123'; 
 const MONGO_URI = process.env.MONGO_URI;
 
@@ -17,10 +17,11 @@ mongoose.connect(MONGO_URI || 'mongodb://127.0.0.1:27017/lexova_db')
     .then(() => console.log("MongoDB Connected to Cloud"))
     .catch(err => console.error("MongoDB Connection Error:", err));
 
+// --- 2. EMAIL CONFIGURATION ---
 const transporter = nodemailer.createTransport({
     service: 'gmail',
     auth: {
-        user: 'officialvidhiora@gmail.com', 
+        user: 'vidhiora.official@gmail.com', 
         pass: process.env.EMAIL_PASS 
     }
 });
@@ -30,17 +31,17 @@ const supportFooter = `
 Need Help or Have Queries?
 📞 Technical & Payment Issues: Anurag Kumar (+91 76449 35111)
 📞 Competition Queries: Pragati Kumari (+91 62991 50584)
-✉️ Official Support: officialvidhiora@gmail.com
+✉️ Official Support: vidhiora.official@gmail.com
 `;
 
-// --- 2. SECURITY MIDDLEWARE ---
+// --- 3. SECURITY MIDDLEWARE ---
 const verifyAdmin = (req, res, next) => {
     const adminPass = req.headers['x-admin-password'];
     if (adminPass === ADMIN_PASSWORD) { next(); } 
     else { res.status(401).json({ error: "Unauthorized: Invalid Admin Password" }); }
 };
 
-// --- 3. DATABASE SCHEMA ---
+// --- 4. DATABASE SCHEMA ---
 const userSchema = new mongoose.Schema({
     fullName: { type: String, required: true },
     email: { type: String, required: true, unique: true },
@@ -54,13 +55,13 @@ const userSchema = new mongoose.Schema({
     walletBalance: { type: Number, default: 0 }, 
     amountPaid: { type: Number, default: 0 },
     utrNumber: { type: String, unique: true, sparse: true }, 
-    paymentProof: { type: String, default: null }, // Stores Base64 string
+    paymentProof: { type: String, default: null }, 
     paymentStatus: { type: String, default: 'Pending' } 
 }, { timestamps: true });
 
 const User = mongoose.model('User', userSchema);
 
-// --- 4. API ROUTES ---
+// --- 5. API ROUTES ---
 app.post('/api/admin/login', (req, res) => {
     const { password } = req.body;
     if (password === ADMIN_PASSWORD) { res.json({ success: true }); } 
@@ -106,7 +107,7 @@ app.post('/api/admin/approve-payment', verifyAdmin, async (req, res) => {
 
         user.paymentStatus = 'Approved';
         if (user.accountType === 'Ambassador' && !user.referralId) {
-            user.referralId = `VID-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
+            user.referralId = `VIP-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
         }
         await user.save();
 
@@ -118,7 +119,8 @@ app.post('/api/admin/approve-payment', verifyAdmin, async (req, res) => {
                 if (totalReferrals > 2) {
                     referrer.walletBalance += 40; await referrer.save();
                     transporter.sendMail({
-                        from: 'officialvidhiora@gmail.com', to: referrer.email,
+                        from: 'vidhiora.official@gmail.com', 
+                        to: referrer.email,
                         subject: '🎉 You earned ₹40 on Vidhiora!',
                         text: `Great job! Referral #${totalReferrals} verified. ₹40 added to your wallet.\nTotal Balance: ₹${referrer.walletBalance}${supportFooter}`
                     });
@@ -132,7 +134,8 @@ app.post('/api/admin/approve-payment', verifyAdmin, async (req, res) => {
             : `Welcome to the Vidhiora National Competition!\nYou can now access your resources.\n\nJoin the Official WhatsApp Group here: ${waGroupLink}`;
 
         transporter.sendMail({
-            from: 'officialvidhiora@gmail.com', to: user.email,
+            from: 'vidhiora.official@gmail.com', 
+            to: user.email,
             subject: 'Payment Verified - Welcome to Vidhiora!',
             text: `Hi ${user.fullName},\n\nYour payment of ₹${user.amountPaid} is successfully verified.\n\n${welcomeMessage}${supportFooter}`
         });
@@ -166,7 +169,8 @@ app.post('/api/admin/create-ambassador', verifyAdmin, async (req, res) => {
 
         await newAmbassador.save();
         await transporter.sendMail({
-            from: 'officialvidhiora@gmail.com', to: email,
+            from: 'vidhiora.official@gmail.com', 
+            to: email,
             subject: 'Welcome to the Vidhiora Ambassador Program!',
             text: `Hi ${fullName},\n\nYou have been appointed as an official Vidhiora Ambassador!\nYour unique referral code is: ${formattedCode}\n\nShare this code with students. They will get 15% off, and you will earn ₹40 for every successful registration!${supportFooter}`
         });
@@ -195,9 +199,23 @@ app.get('/api/admin/users', verifyAdmin, async (req, res) => {
         users.forEach(u => {
             if (u.paymentStatus === 'Approved') rev += u.amountPaid;
             payouts += u.walletBalance;
-            if (u.referralId || u.accountType === 'Ambassador') {
-                ambassadors.push({ _id: u._id, fullName: u.fullName, email: u.email, phone: u.phone, referralId: u.referralId || 'Pending Approval', walletBalance: u.walletBalance, totalReferred: referralCounts[u.referralId] || 0 });
-            } else { students.push(u); }
+            
+            // --- THE UPDATED SORTING LOGIC ---
+            // Only sorts into the Ambassador tab if they are strictly Approved
+            if ((u.referralId || u.accountType === 'Ambassador') && u.paymentStatus === 'Approved') {
+                ambassadors.push({ 
+                    _id: u._id, 
+                    fullName: u.fullName, 
+                    email: u.email, 
+                    phone: u.phone, 
+                    referralId: u.referralId, 
+                    walletBalance: u.walletBalance, 
+                    totalReferred: referralCounts[u.referralId] || 0 
+                });
+            } else { 
+                // Everyone else (including pending ambassadors) waits in the main inbox
+                students.push(u); 
+            }
         });
         res.json({ stats: { totalUsers: users.length, totalRevenue: rev.toFixed(2), ambassadorPayouts: payouts.toFixed(2), netProfit: (rev - payouts).toFixed(2) }, ambassadors, students });
     } catch (error) { res.status(500).json({ error: "CRASH: " + error.message }); }
