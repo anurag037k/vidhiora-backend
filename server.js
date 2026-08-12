@@ -147,9 +147,11 @@ app.post('/api/admin/approve-payment', verifyAdmin, async (req, res) => {
 app.delete('/api/admin/reject-payment/:userId', verifyAdmin, async (req, res) => {
     try {
         const user = await User.findById(req.params.userId);
-        if (!user || user.paymentStatus === 'Approved') return res.status(400).json({ error: "Cannot reject verified users." });
+        if (!user) return res.status(404).json({ error: "User not found." });
+        
+        // Allows deleting if it's pending, OR if you need to wipe a wrong approval
         await User.findByIdAndDelete(req.params.userId);
-        res.json({ message: "Fake registration deleted." });
+        res.json({ message: "Registration deleted successfully." });
     } catch (error) { res.status(500).json({ error: "CRASH: " + error.message }); }
 });
 
