@@ -4,13 +4,13 @@ const cors = require('cors');
 const nodemailer = require('nodemailer');
 
 const app = express();
-// Increased limit to 10mb to handle Base64 screenshot strings safely
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ limit: '10mb', extended: true }));
 app.use(cors());
 
 // --- 1. SECURE CONFIGURATION ---
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin@vidhiora123'; 
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'your_new_admin_password'; 
+const STAFF_PASSWORD = process.env.STAFF_PASSWORD || 'your_new_staff_password';
 const MONGO_URI = process.env.MONGO_URI;
 
 mongoose.connect(MONGO_URI || 'mongodb://127.0.0.1:27017/lexova_db')
@@ -41,6 +41,12 @@ const verifyAdmin = (req, res, next) => {
     else { res.status(401).json({ error: "Unauthorized: Invalid Admin Password" }); }
 };
 
+const verifyStaff = (req, res, next) => {
+    const staffPass = req.headers['x-staff-password'];
+    if (staffPass === STAFF_PASSWORD || staffPass === ADMIN_PASSWORD) { next(); } 
+    else { res.status(401).json({ error: "Unauthorized: Invalid Staff Password" }); }
+};
+
 // --- 4. DATABASE SCHEMA ---
 const userSchema = new mongoose.Schema({
     fullName: { type: String, required: true },
@@ -60,16 +66,24 @@ const userSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 const User = mongoose.model('User', userSchema);
-// Automatically drop the old strict referralId index on startup to fix duplicate null crashes
 User.collection.dropIndex("referralId_1").catch(() => {});
 
 // --- 5. API ROUTES ---
+
+// Login Routes
 app.post('/api/admin/login', (req, res) => {
     const { password } = req.body;
     if (password === ADMIN_PASSWORD) { res.json({ success: true }); } 
     else { res.status(401).json({ error: "Incorrect Admin Password" }); }
 });
 
+app.post('/api/staff/login', (req, res) => {
+    const { password } = req.body;
+    if (password === STAFF_PASSWORD) { res.json({ success: true }); } 
+    else { res.status(401).json({ error: "Incorrect Staff Password" }); }
+});
+
+// Registration Routes
 app.post('/api/verify-code', async (req, res) => {
     const { code } = req.body;
     const referrer = await User.findOne({ referralId: code.toUpperCase() });
@@ -100,6 +114,7 @@ app.post('/api/register', async (req, res) => {
     } catch (error) { res.status(500).json({ error: "CRASH: " + error.message }); }
 });
 
+// Admin Actions
 app.post('/api/admin/approve-payment', verifyAdmin, async (req, res) => {
     try {
         const { userId } = req.body;
@@ -163,9 +178,7 @@ app.delete('/api/admin/remove-ambassador/:userId', verifyAdmin, async (req, res)
         
         await User.findByIdAndDelete(req.params.userId);
         res.json({ message: "Ambassador removed successfully." });
-    } catch (error) { 
-        res.status(500).json({ error: "CRASH: " + error.message }); 
-    }
+    } catch (error) { res.status(500).json({ error: "CRASH: " + error.message }); }
 });
 
 app.post('/api/admin/create-ambassador', verifyAdmin, async (req, res) => {
@@ -217,19 +230,22 @@ app.get('/api/admin/users', verifyAdmin, async (req, res) => {
             
             if ((u.referralId || u.accountType === 'Ambassador') && u.paymentStatus === 'Approved') {
                 ambassadors.push({ 
-                    _id: u._id, 
-                    fullName: u.fullName, 
-                    email: u.email, 
-                    phone: u.phone, 
-                    referralId: u.referralId, 
-                    walletBalance: u.walletBalance, 
-                    totalReferred: referralCounts[u.referralId] || 0 
+                    _id: u._id, fullName: u.fullName, email: u.email, phone: u.phone, 
+                    referralId: u.referralId, walletBalance: u.walletBalance, totalReferred: referralCounts[u.referralId] || 0 
                 });
-            } else { 
-                students.push(u); 
-            }
+            } else { students.push(u); }
         });
         res.json({ stats: { totalUsers: users.length, totalRevenue: rev.toFixed(2), ambassadorPayouts: payouts.toFixed(2), netProfit: (rev - payouts).toFixed(2) }, ambassadors, students });
+    } catch (error) { res.status(500).json({ error: "CRASH: " + error.message }); }
+});
+
+// STRICTLY FILTERED STAFF DATA FETCH (Now includes Education Profile)
+app.get('/api/staff/users', verifyStaff, async (req, res) => {
+    try {
+        const users = await User.find({ accountType: { $ne: 'Ambassador' } })
+                                .select('fullName email phone college qualification courseYear utrNumber paymentStatus createdAt')
+                                .sort({ createdAt: -1 });
+        res.json({ students: users });
     } catch (error) { res.status(500).json({ error: "CRASH: " + error.message }); }
 });
 
