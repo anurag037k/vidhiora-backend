@@ -4,6 +4,7 @@ const cors = require('cors');
 const nodemailer = require('nodemailer');
 
 const app = express();
+
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ limit: '10mb', extended: true }));
 app.use(cors());
@@ -226,8 +227,7 @@ app.get('/api/admin/users', verifyAdmin, async (req, res) => {
         users.forEach(u => { if (u.referredBy && u.paymentStatus === 'Approved') referralCounts[u.referredBy] = (referralCounts[u.referredBy] || 0) + 1; });
         users.forEach(u => {
             if (u.paymentStatus === 'Approved') rev += u.amountPaid;
-            payouts += u.walletBalance;
-            
+            payouts += u.walletBalance;            
             if ((u.referralId || u.accountType === 'Ambassador') && u.paymentStatus === 'Approved') {
                 ambassadors.push({ 
                     _id: u._id, fullName: u.fullName, email: u.email, phone: u.phone, 
